@@ -4,8 +4,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_page.dart';
 import 'culturedetail_page.dart';
 import 'angklung_page.dart';
-import 'profile_page.dart'; // Pastikan ini diimport
+import 'profile_page.dart';
 import 'package:warisanbudaya/database.dart';
+import 'package:warisanbudaya/services/notification_services.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'map_page.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,36 +19,55 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  // Palet Warna Utama
+  // 🔥 TAMBAHAN: instance notification (biar tidak buat berulang)
+  final NotificationService _notificationService = NotificationService();
+
   final Color primaryColor = const Color(0xFF800000);
   final Color accentColor = const Color(0xFFC0A080);
   final Color bgColor = const Color(0xFFFDF5E6);
   final Color cardWhite = Colors.white;
 
-  // State
   String _fullName = "Pengguna";
   String _greeting = "Selamat Datang";
   String _selectedCategory = "Semua";
-  String? _profileImagePath; // State untuk path foto
+  String? _profileImagePath;
 
-  // Data dari SQLite
   List<String> _categories = [];
   List<Map<String, dynamic>> _collections = [];
+  List<Map<String, dynamic>> _filteredCollections = [];
 
-  // Status loading
   bool _isLoadingCategories = true;
   bool _isLoadingCollections = true;
 
   @override
   void initState() {
     super.initState();
-    _refreshData();
-    _updateGreeting();
-    _fetchCategories();
-    _fetchCollections();
+    _initAll(); // 🔥 dirapikan
   }
 
-  // Fungsi untuk refresh data (dipanggil di initState & saat balik dari profil)
+  // 🔥 INIT TERPUSAT
+  Future<void> _initAll() async {
+    await _notificationService.initNotification();
+    await _refreshData();
+    _updateGreeting();
+    await _fetchCategories();
+    await _fetchCollections();
+  }
+
+  Future<void> _openMap(double lat, double lng, String label) async {
+    final Uri googleMapsUrl = Uri.parse(
+      "https://www.google.com/maps/search/?api=1&query=$lat,$lng($label)",
+    );
+
+    if (await canLaunchUrl(googleMapsUrl)) {
+      await launchUrl(googleMapsUrl, mode: LaunchMode.externalApplication);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Tidak bisa membuka Google Maps")),
+      );
+    }
+  }
+
   Future<void> _refreshData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -55,24 +78,22 @@ class _HomePageState extends State<HomePage> {
 
   void _updateGreeting() {
     final hour = DateTime.now().hour;
-    setState(() {
-      if (hour >= 5 && hour < 11) {
-        _greeting = "Selamat pagi";
-      } else if (hour >= 11 && hour < 15) {
-        _greeting = "Selamat siang";
-      } else if (hour >= 15 && hour < 18) {
-        _greeting = "Selamat sore";
-      } else {
-        _greeting = "Selamat malam";
-      }
-    });
+    if (hour >= 5 && hour < 11) {
+      _greeting = "Selamat pagi";
+    } else if (hour < 15) {
+      _greeting = "Selamat siang";
+    } else if (hour < 18) {
+      _greeting = "Selamat sore";
+    } else {
+      _greeting = "Selamat malam";
+    }
   }
 
   Future<void> _fetchCategories() async {
     setState(() => _isLoadingCategories = true);
     final cats = await DbHelper().getCategories();
     setState(() {
-      _categories = cats;
+      _categories = ["Semua", ...cats.where((c) => c != "Semua")];
       _isLoadingCategories = false;
     });
   }
@@ -82,7 +103,19 @@ class _HomePageState extends State<HomePage> {
     final data = await DbHelper().getCollections(category: category);
     setState(() {
       _collections = data;
+      _filteredCollections = data;
       _isLoadingCollections = false;
+    });
+  }
+
+  void _filterSearch(String query) {
+    setState(() {
+      _filteredCollections = _collections.where((item) {
+        final name = item['name'].toString().toLowerCase();
+        final loc = item['location'].toString().toLowerCase();
+        return name.contains(query.toLowerCase()) ||
+            loc.contains(query.toLowerCase());
+      }).toList();
     });
   }
 
@@ -91,13 +124,43 @@ class _HomePageState extends State<HomePage> {
     _fetchCollections(category: category);
   }
 
+  // 🔔 🔥 PERBAIKAN NOTIF (dipisah jadi function)
+  Future<void> _showNotification() async {
+    final facts = [
+      "Candi Borobudur memiliki 2.672 panel relief 🏛️",
+      "Batik diakui UNESCO sejak 2009 🎨",
+      "Angklung diakui UNESCO sejak 2010 🎶",
+    ];
+
+    facts.shuffle();
+
+    await _notificationService.showNotification(
+      id: 1,
+      title: "Wawasan Budaya 🇮🇩",
+      body: facts.first,
+      payload: "detail_budaya",
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text("Notifikasi berhasil dikirim!"),
+        backgroundColor: primaryColor,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: bgColor,
       body: SafeArea(
         child: RefreshIndicator(
-          onRefresh: _refreshData,
+          color: primaryColor,
+          onRefresh: () async {
+            await _initAll();
+          },
           child: SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             child: Column(
@@ -120,11 +183,12 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ── Widget Components ─────────────────────────────────────
-
+  // ================= HEADER =================
   Widget _buildHeader() {
-    String initial = _fullName.isNotEmpty ? _fullName[0].toUpperCase() : "U";
-    
+    String initial = _fullName.trim().isNotEmpty
+        ? _fullName.trim()[0].toUpperCase()
+        : "U";
+
     return Padding(
       padding: const EdgeInsets.all(20.0),
       child: Row(
@@ -149,32 +213,37 @@ class _HomePageState extends State<HomePage> {
           ),
           Row(
             children: [
-              Icon(Icons.notifications_none, color: primaryColor),
-              const SizedBox(width: 15),
-              // Bagian Profil yang bisa diklik
+              // 🔥 ICON BUTTON SUDAH DIPERBAIKI
+              IconButton(
+                icon: Icon(
+                  Icons.notifications_active_outlined,
+                  color: primaryColor,
+                  size: 28,
+                ),
+                onPressed: _showNotification,
+              ),
+
               GestureDetector(
                 onTap: () {
-                  // Navigasi ke ProfilePage dan refresh saat kembali
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const ProfilePage()),
-                  ).then((_) => _refreshData()); 
+                    MaterialPageRoute(
+                      builder: (context) => const ProfilePage(),
+                    ),
+                  ).then((_) => _refreshData());
                 },
                 child: CircleAvatar(
-                  backgroundColor: accentColor,
+                  backgroundColor: accentColor.withOpacity(0.2),
                   radius: 18,
-                  backgroundImage: (_profileImagePath != null && _profileImagePath!.isNotEmpty)
+                  backgroundImage:
+                      (_profileImagePath != null &&
+                          File(_profileImagePath!).existsSync())
                       ? FileImage(File(_profileImagePath!))
                       : null,
-                  child: (_profileImagePath == null || _profileImagePath!.isEmpty)
-                      ? Text(
-                          initial,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        )
+                  child:
+                      (_profileImagePath == null ||
+                          !File(_profileImagePath!).existsSync())
+                      ? Text(initial)
                       : null,
                 ),
               ),
@@ -185,99 +254,117 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ================= SEARCH =================
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: TextField(
+        onChanged: _filterSearch,
         decoration: InputDecoration(
           hintText: "Cari batik, tari, kuliner...",
-          hintStyle: const TextStyle(fontSize: 14),
           prefixIcon: Icon(Icons.search, color: accentColor),
           filled: true,
           fillColor: cardWhite,
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: accentColor.withOpacity(0.3)),
-          ),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         ),
       ),
     );
   }
 
+  // ================= CATEGORIES =================
   Widget _buildCategories() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-          child: Text(
-            "Kategori Budaya",
-            style: TextStyle(color: primaryColor, fontWeight: FontWeight.bold),
-          ),
-        ),
-        SizedBox(
-          height: 40,
-          child: _isLoadingCategories
-              ? ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 15),
-                  itemCount: 5,
-                  itemBuilder: (_, __) => Container(
-                    width: 80,
-                    margin: const EdgeInsets.symmetric(horizontal: 5),
+    return SizedBox(
+      height: 40,
+      child: _isLoadingCategories
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _categories.length,
+              itemBuilder: (context, i) {
+                final cat = _categories[i];
+                return GestureDetector(
+                  onTap: () => _onCategorySelected(cat),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 15),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade200,
+                      color: _selectedCategory == cat
+                          ? primaryColor
+                          : cardWhite,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                  ),
-                )
-              : ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 15),
-                  itemCount: _categories.length,
-                  itemBuilder: (context, i) {
-                    final cat = _categories[i];
-                    final bool isSelected = cat == _selectedCategory;
-                    return GestureDetector(
-                      onTap: () => _onCategorySelected(cat),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeInOut,
-                        margin: const EdgeInsets.symmetric(horizontal: 5),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        decoration: BoxDecoration(
-                          color: isSelected ? primaryColor : cardWhite,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: isSelected
-                                ? primaryColor
-                                : accentColor.withOpacity(0.3),
-                          ),
-                          boxShadow: isSelected
-                              ? [
-                                  BoxShadow(
-                                    color: primaryColor.withOpacity(0.3),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 3),
-                                  ),
-                                ]
-                              : [],
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          cat,
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : primaryColor,
-                            fontWeight: FontWeight.w500,
-                          ),
+                    child: Center(
+                      child: Text(
+                        cat,
+                        style: TextStyle(
+                          color: _selectedCategory == cat
+                              ? Colors.white
+                              : primaryColor,
                         ),
                       ),
-                    );
-                  },
-                ),
+                    ),
+                  ),
+                );
+              },
+            ),
+    );
+  }
+
+  // ================= COLLECTIONS =================
+  Widget _buildCollections() {
+    if (_isLoadingCollections) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_filteredCollections.isEmpty) {
+      return const Center(child: Text("Tidak ada data"));
+    }
+
+    return SizedBox(
+      height: 180,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: _filteredCollections.length,
+        itemBuilder: (context, i) {
+          final item = _filteredCollections[i];
+          return _collectionCard(item);
+        },
+      ),
+    );
+  }
+
+  Widget _collectionCard(Map<String, dynamic> item) {
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CultureDetailPage(
+            itemName: item['name'],
+            category: item['category'],
+            location: item['location'],
+            description: item['description'],
+            imagePath: item['image_path'],
+            colorHex: item['color_hex'],
+          ),
         ),
-      ],
+      ),
+      child: Container(
+        width: 140,
+        margin: const EdgeInsets.all(8),
+        color: cardWhite,
+        child: Column(
+          children: [
+            Expanded(
+              child: Image.asset(
+                item['image_path'],
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const Icon(Icons.image),
+              ),
+            ),
+            Text(item['name']),
+          ],
+        ),
+      ),
     );
   }
 
@@ -286,10 +373,18 @@ class _HomePageState extends State<HomePage> {
       margin: const EdgeInsets.all(20),
       padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: cardWhite,
+        gradient: LinearGradient(
+          colors: [cardWhite, bgColor],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
         borderRadius: BorderRadius.circular(15),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Row(
@@ -298,11 +393,11 @@ class _HomePageState extends State<HomePage> {
             width: 70,
             height: 70,
             decoration: BoxDecoration(
-              color: bgColor,
+              color: primaryColor.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: accentColor.withOpacity(0.2)),
             ),
-            child: Icon(Icons.grid_4x4, color: primaryColor, size: 30),
+            child: Icon(Icons.auto_awesome, color: primaryColor, size: 30),
           ),
           const SizedBox(width: 15),
           Expanded(
@@ -310,14 +405,21 @@ class _HomePageState extends State<HomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: accentColor,
                     borderRadius: BorderRadius.circular(5),
                   ),
                   child: const Text(
                     "Pilihan Hari Ini",
-                    style: TextStyle(color: Colors.white, fontSize: 10),
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 5),
@@ -337,161 +439,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildCollections() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _sectionHeader(
-          _selectedCategory == "Semua"
-              ? "Jelajahi Koleksi"
-              : "Koleksi $_selectedCategory",
-        ),
-        if (_isLoadingCollections)
-          SizedBox(
-            height: 160,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 15),
-              itemCount: 3,
-              itemBuilder: (_, __) => Container(
-                width: 130,
-                margin: const EdgeInsets.symmetric(horizontal: 5),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(15),
-                ),
-              ),
-            ),
-          )
-        else if (_collections.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-            child: Center(
-              child: Text(
-                "Belum ada koleksi untuk kategori ini.",
-                style: TextStyle(color: Colors.grey, fontSize: 13),
-              ),
-            ),
-          )
-        else
-          SizedBox(
-            height: 160,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 15),
-              itemCount: _collections.length,
-              itemBuilder: (context, i) {
-                final item = _collections[i];
-                final color = Color(
-                  int.parse('FF${item['color_hex']}', radix: 16),
-                );
-                return _collectionCard(
-                  item['category'],
-                  item['name'],
-                  item['location'],
-                  color,
-                  item['image_path'] ?? '',
-                  item['color_hex'] ?? 'FFF5E1',
-                  item['description'] ?? '',
-                );
-              },
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _collectionCard(
-    String cat,
-    String name,
-    String loc,
-    Color headerColor,
-    String imagePath,
-    String colorHex,
-    String description,
-  ) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => CultureDetailPage(
-              itemName: name,
-              category: cat,
-              location: loc,
-              description: description,
-              imagePath: imagePath,
-              colorHex: colorHex,
-            ),
-          ),
-        );
-      },
-      child: Container(
-        width: 130,
-        margin: const EdgeInsets.symmetric(horizontal: 5),
-        decoration: BoxDecoration(
-          color: cardWhite,
-          borderRadius: BorderRadius.circular(15),
-          border: Border.all(color: accentColor.withOpacity(0.1)),
-        ),
-        child: Column(
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                child: imagePath.isNotEmpty
-                    ? Image.asset(
-                        imagePath,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
-                            _cardColorFallback(headerColor, cat),
-                      )
-                    : _cardColorFallback(headerColor, cat),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(10.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    style: TextStyle(
-                      color: primaryColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    loc,
-                    style: const TextStyle(color: Colors.grey, fontSize: 10),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _cardColorFallback(Color color, String label) {
     return Container(
       width: double.infinity,
-      color: color,
-      child: Center(
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.black54,
-            fontWeight: FontWeight.bold,
-            fontSize: 12,
-          ),
-        ),
-      ),
+      color: color.withOpacity(0.3),
+      child: Center(child: Icon(Icons.image_outlined, color: color, size: 30)),
     );
   }
 
@@ -517,7 +469,11 @@ class _HomePageState extends State<HomePage> {
                 color: const Color(0xFF1D9E75),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.music_note, color: Colors.white, size: 28),
+              child: const Icon(
+                Icons.music_note,
+                color: Colors.white,
+                size: 28,
+              ),
             ),
             const SizedBox(width: 15),
             const Expanded(
@@ -535,7 +491,11 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios, size: 14, color: Color(0xFF1D9E75)),
+            const Icon(
+              Icons.arrow_forward_ios,
+              size: 14,
+              color: Color(0xFF1D9E75),
+            ),
           ],
         ),
       ),
@@ -545,14 +505,33 @@ class _HomePageState extends State<HomePage> {
   Widget _buildLocationSection() {
     return Column(
       children: [
-        _sectionHeader("Terdekat Darimu", hasAction: true),
-        _locationItem("Museum Sonobudoyo", "Museum • 1.2 km", Icons.museum),
-        _locationItem("Pasar Beringharjo", "Pusat Batik • 2.5 km", Icons.shopping_bag),
+        _sectionHeader("Rekomendasi Museum", hasAction: true),
+        _locationItem(
+          "Museum Sonobudoyo",
+          "Museum • 1.2 km",
+          Icons.museum,
+          -7.8025,
+          110.3638,
+        ),
+
+        _locationItem(
+          "Keraton Yogyakarta",
+          "Istana Sejarah • 2.1 km",
+          Icons.fort,
+          -7.8052,
+          110.3642,
+        ),
       ],
     );
   }
 
-  Widget _locationItem(String title, String sub, IconData icon) {
+  Widget _locationItem(
+    String title,
+    String sub,
+    IconData icon,
+    double lat,
+    double lng,
+  ) {
     return ListTile(
       leading: Container(
         padding: const EdgeInsets.all(8),
@@ -570,8 +549,22 @@ class _HomePageState extends State<HomePage> {
           fontSize: 14,
         ),
       ),
-      subtitle: Text(sub, style: const TextStyle(color: Colors.black54, fontSize: 12)),
-      trailing: const Icon(Icons.chevron_right, size: 18),
+      subtitle: Text(
+        sub,
+        style: const TextStyle(color: Colors.black54, fontSize: 12),
+      ),
+      trailing: const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+
+      // 🔥 INI KUNCINYA
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                MapPage(destination: LatLng(lat, lng), placeName: title),
+          ),
+        );
+      },
     );
   }
 
@@ -604,10 +597,13 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: primaryColor,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(15),
                 ),
                 child: const Text(
                   "TANYA AI",
@@ -640,12 +636,15 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           if (hasAction)
-            Text(
-              "Lihat Semua",
-              style: TextStyle(
-                color: accentColor,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
+            GestureDetector(
+              onTap: () {},
+              child: Text(
+                "Lihat Semua",
+                style: TextStyle(
+                  color: accentColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
         ],

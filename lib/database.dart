@@ -16,7 +16,7 @@ class DbHelper {
     String path = join(await getDatabasesPath(), dbName);
     return await openDatabase(
       path,
-      version: 3, // Naik ke 3 (tambah kolom image_path)
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -27,27 +27,25 @@ class DbHelper {
     await _createUserTable(db);
     await _createScoresTable(db);
     await _createCategoriesTable(db);
-    await _createCollectionsTable(db); // sudah include image_path
+    await _createCollectionsTable(db);
+    await _createFactsTable(db);
     await _seedCategories(db);
     await _seedCollections(db);
+    await _seedFacts(db);
   }
 
   // Dipanggil saat DB sudah ada tapi versinya lebih lama
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
-      // Tambah tabel categories & collections (tanpa image_path)
-      await _createCategoriesTable(db);
-      await _createCollectionsTable(db);
-      await _seedCategories(db);
-      await _seedCollections(db);
-    }
     if (oldVersion < 3) {
-      // Tambah kolom image_path ke tabel yang sudah ada
       await db.execute(
         "ALTER TABLE collections ADD COLUMN image_path TEXT NOT NULL DEFAULT ''",
       );
-      // Isi image_path untuk data yang sudah ada di DB
       await _seedImagePaths(db);
+    }
+
+    if (oldVersion < 4) {
+      await _createFactsTable(db);
+      await _seedFacts(db);
     }
   }
 
@@ -96,6 +94,16 @@ class DbHelper {
         image_path TEXT NOT NULL DEFAULT ''
       )
     ''');
+  }
+
+  // Tabel facts
+  Future<void> _createFactsTable(Database db) async {
+    await db.execute('''
+    CREATE TABLE facts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      content TEXT NOT NULL
+    )
+  ''');
   }
 
   // ── Seed Data ─────────────────────────────────────────────
@@ -228,6 +236,26 @@ class DbHelper {
     }
   }
 
+  // Seed lengkap facts
+  Future<void> _seedFacts(Database db) async {
+    final facts = [
+      {"content": "Angklung diakui UNESCO sejak 2010 🎶"},
+      {"content": "Borobudur adalah candi Buddha terbesar di dunia 🏛️"},
+      {"content": "Batik diakui UNESCO tahun 2009 🎨"},
+      {"content": "Indonesia punya 700+ bahasa daerah 🗣️"},
+      {"content": "Tari Saman disebut Tarian Seribu Tangan 💃"},
+      {"content": "Wayang kulit termasuk warisan dunia 🎭"},
+      {"content": "Rendang pernah jadi makanan terenak dunia 🌶️"},
+      {"content": "Sasando berasal dari NTT 🎵"},
+      {"content": "Gamelan dimainkan di upacara adat Jawa 🎼"},
+      {"content": "Rumah Tongkonan berasal dari Toraja 🏠"},
+    ];
+
+    for (final fact in facts) {
+      await db.insert('facts', fact);
+    }
+  }
+
   // Dipanggil saat upgrade dari v2 → v3
   // Update image_path untuk baris yang sudah ada berdasarkan name
   Future<void> _seedImagePaths(Database db) async {
@@ -327,5 +355,10 @@ class DbHelper {
       where: 'id = ?',
       whereArgs: [id],
     );
+  }
+
+  Future<List<Map<String, dynamic>>> getFacts() async {
+    var dbClient = await db;
+    return await dbClient.query('facts');
   }
 }

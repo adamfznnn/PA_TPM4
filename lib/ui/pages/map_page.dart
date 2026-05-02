@@ -7,7 +7,10 @@ import 'dart:async';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class MapPage extends StatefulWidget {
-  const MapPage({super.key});
+  final LatLng? destination;
+  final String? placeName;
+
+  const MapPage({super.key, this.destination, this.placeName});
 
   @override
   _MapPageState createState() => _MapPageState();
@@ -42,6 +45,15 @@ class _MapPageState extends State<MapPage> {
     super.initState();
     _initializeMarkers();
     _initSensors();
+
+    // 🔥 AUTO ROUTE JIKA ADA DESTINATION DARI HOMEPAGE
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.destination != null) {
+        Future.delayed(const Duration(seconds: 2), () {
+          _getRouteTo(widget.destination!);
+        });
+      }
+    });
   }
 
   void _initializeMarkers() {

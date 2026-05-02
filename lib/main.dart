@@ -1,18 +1,49 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart'; // Wajib untuk API Key aman
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:warisanbudaya/ui/pages/login_page.dart';
-// Import MapPage kamu di sini agar bisa digunakan sebagai rute
+import 'package:warisanbudaya/services/notification_services.dart';
+import 'package:warisanbudaya/database.dart';
+import 'package:timezone/data/latest.dart' as tz;
 
 Future<void> main() async {
-  // Pastikan plugin diinisialisasi sebelum load .env
   WidgetsFlutterBinding.ensureInitialized();
 
+  // 🔥 INIT TIMEZONE
+  tz.initializeTimeZones();
+
   try {
-    // Memuat API Key dari file .env (Maps & AI)
     await dotenv.load(fileName: ".env");
   } catch (e) {
-    debugPrint("Error loading .env file: $e");
+    debugPrint("Error loading .env: $e");
   }
+
+  // 🔔 INIT NOTIFICATION
+  final notificationService = NotificationService();
+  await notificationService.initNotification();
+
+  // 🔥 AMBIL DATA DARI DATABASE
+  final db = DbHelper();
+  final facts = await db.getFacts();
+
+  // 🔥 DEFAULT (kalau DB kosong)
+  String selectedFact = "Indonesia kaya akan budaya 🇮🇩";
+
+  // 🔥 RANDOM DARI DATABASE
+  if (facts.isNotEmpty) {
+    final random = Random();
+    final randomData = facts[random.nextInt(facts.length)];
+
+    selectedFact = randomData['content'];
+  }
+
+  // 🔥 SET NOTIF HARIAN
+  await notificationService.scheduleDailyNotification(
+    hour: 8,
+    minute: 0,
+    title: "Tahukah Kamu? 🇮🇩",
+    body: selectedFact, // ✅ dari database
+  );
 
   runApp(const WarisanNusantaraApp());
 }
@@ -22,9 +53,8 @@ class WarisanNusantaraApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Definisi Warna Tema (Konsisten dengan SafeGuard branding)
-    final Color primaryColor = const Color(0xFF800000); // Merah Marun
-    final Color bgColor = const Color(0xFFFDF5E6); // Krem Batik
+    final Color primaryColor = const Color(0xFF800000);
+    final Color bgColor = const Color(0xFFFDF5E6);
 
     return MaterialApp(
       title: 'WarisanNusantara',
@@ -38,17 +68,14 @@ class WarisanNusantaraApp extends StatelessWidget {
           seedColor: primaryColor,
           primary: primaryColor,
         ),
-        // Menggunakan font Georgia untuk kesan heritage/warisan budaya
         fontFamily: 'Georgia',
 
-        appBarTheme: AppBarTheme(
-          backgroundColor: primaryColor,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF800000),
           foregroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: true, // Membuat judul di tengah agar lebih rapi
+          centerTitle: true,
         ),
 
-        // Tambahkan tema Button agar seragam di LoginPage & MapPage
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
             backgroundColor: primaryColor,
@@ -60,14 +87,9 @@ class WarisanNusantaraApp extends StatelessWidget {
         ),
       ),
 
-      // Entry point: Halaman Login
       home: const LoginPage(),
 
-      // Definisikan Routes agar navigasi antar halaman lebih mudah
-      routes: {
-        '/login': (context) => const LoginPage(),
-        // '/map': (context) => const MapPage(), // Uncomment jika class MapPage sudah di-import
-      },
+      routes: {'/login': (context) => const LoginPage()},
     );
   }
 }
