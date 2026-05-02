@@ -67,18 +67,13 @@ class _ProfilePageState extends State<ProfilePage> {
 
   // ✏️ EDIT NAMA
   void _showEditProfileDialog() {
-    TextEditingController nameController =
-        TextEditingController(text: _name);
+    TextEditingController nameController = TextEditingController(text: _name);
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: Text(
-          "Edit Profil",
-          style: TextStyle(color: primaryColor),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text("Edit Profil", style: TextStyle(color: primaryColor)),
         content: TextField(
           controller: nameController,
           decoration: const InputDecoration(
@@ -89,12 +84,10 @@ class _ProfilePageState extends State<ProfilePage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child:
-                const Text("Batal", style: TextStyle(color: Colors.grey)),
+            child: const Text("Batal", style: TextStyle(color: Colors.grey)),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor),
+            style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
             onPressed: () async {
               final prefs = await SharedPreferences.getInstance();
 
@@ -106,8 +99,75 @@ class _ProfilePageState extends State<ProfilePage> {
 
               Navigator.pop(context);
             },
-            child: const Text("Simpan",
-                style: TextStyle(color: Colors.white)),
+            child: const Text("Simpan", style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPesanKesanDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    TextEditingController pesanController = TextEditingController(
+      text:
+          prefs.getString('pesan_tpm') ??
+          "Mata kuliah Teknologi Pemrograman Mobile sangat menarik dan membantu saya memahami cara membuat aplikasi mobile secara nyata.",
+    );
+
+    TextEditingController kesanController = TextEditingController(
+      text:
+          prefs.getString('kesan_tpm') ??
+          "Saya merasa mendapatkan banyak pengalaman baru, mulai dari desain hingga implementasi aplikasi. Walaupun sempat kesulitan, proses belajarnya sangat berkesan.",
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+        title: Text("Pesan & Kesan TPM", style: TextStyle(color: primaryColor)),
+        content: SingleChildScrollView(
+          child: Column(
+            children: [
+              TextField(
+                controller: pesanController,
+                decoration: const InputDecoration(
+                  labelText: "Pesan",
+                  icon: Icon(Icons.message),
+                ),
+                maxLines: 3,
+              ),
+              TextField(
+                controller: kesanController,
+                decoration: const InputDecoration(
+                  labelText: "Kesan",
+                  icon: Icon(Icons.feedback),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Batal"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: primaryColor),
+            onPressed: () async {
+              await prefs.setString('pesan_tpm', pesanController.text);
+              await prefs.setString('kesan_tpm', kesanController.text);
+
+              Navigator.pop(context);
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Pesan & Kesan berhasil disimpan"),
+                ),
+              );
+            },
+            child: const Text("Simpan", style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -170,17 +230,15 @@ class _ProfilePageState extends State<ProfilePage> {
                       Container(
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          border:
-                              Border.all(color: Colors.white, width: 4),
+                          border: Border.all(color: Colors.white, width: 4),
                         ),
                         child: CircleAvatar(
                           radius: 65,
                           backgroundColor: Colors.grey[300],
                           backgroundImage: _imageFile != null
                               ? FileImage(_imageFile!)
-                              : const AssetImage(
-                                      'assets/profile_adam.jpg')
-                                  as ImageProvider,
+                              : const AssetImage('assets/profile_adam.jpg')
+                                    as ImageProvider,
                         ),
                       ),
                       Positioned(
@@ -191,8 +249,11 @@ class _ProfilePageState extends State<ProfilePage> {
                           child: const CircleAvatar(
                             radius: 20,
                             backgroundColor: Colors.orangeAccent,
-                            child: Icon(Icons.camera_alt,
-                                color: Colors.white, size: 20),
+                            child: Icon(
+                              Icons.camera_alt,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ),
                         ),
                       ),
@@ -210,8 +271,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   ),
                   Text(
                     "Username: $_username",
-                    style: const TextStyle(
-                        color: Colors.white70, fontSize: 16),
+                    style: const TextStyle(color: Colors.white70, fontSize: 16),
                   ),
                 ],
               ),
@@ -224,12 +284,16 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Card(
                 elevation: 5,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
-                child: const Padding(
-                  padding: EdgeInsets.all(20),
-                  child: Text(
-                    "Aplikasi Warisan Nusantara membantu mengenal budaya Indonesia 🇮🇩",
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: ListTile(
+                  leading: Icon(Icons.feedback, color: primaryColor),
+                  title: const Text("Pesan & Kesan TPM"),
+                  subtitle: const Text(
+                    "Tekan untuk menulis pengalaman kamu selama mata kuliah",
                   ),
+                  trailing: const Icon(Icons.edit),
+                  onTap: _showPesanKesanDialog,
                 ),
               ),
             ),

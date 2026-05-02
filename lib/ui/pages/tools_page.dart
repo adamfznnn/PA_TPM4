@@ -18,7 +18,7 @@ class _ToolsPageState extends State<ToolsPage> {
   double hasilEur = 0;
   double hasilGbp = 0;
 
-  // Kurs statis (Agar tidak ribet API)
+  // Kurs statis
   final double kursUsd = 16200;
   final double kursEur = 17300;
   final double kursGbp = 20100;
@@ -32,7 +32,6 @@ class _ToolsPageState extends State<ToolsPage> {
     });
   }
 
-  // Fungsi ambil waktu berdasarkan Zona
   String _getWaktu(int offset) {
     DateTime now = DateTime.now().toUtc().add(Duration(hours: offset));
     return DateFormat('HH:mm').format(now);

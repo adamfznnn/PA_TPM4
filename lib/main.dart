@@ -20,7 +20,7 @@ Future<void> main() async {
 
   // 🔔 INIT NOTIFICATION
   final notificationService = NotificationService();
-  await notificationService.initNotification();
+  await notificationService.scheduleDailyRandomNotification();
 
   // 🔥 AMBIL DATA DARI DATABASE
   final db = DbHelper();
